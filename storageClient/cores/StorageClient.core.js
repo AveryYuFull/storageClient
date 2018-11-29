@@ -89,15 +89,43 @@ export default class StorageCore extends DefaultOptions {
      * 获取storage的值
      * @param {MemoryStorage|Storage} storage storage对象
      * @param {String} key key值
+     * @param {String} storageType storage类型
+     * @returns {Object} 返回对象
+     * 
+     * @memberof StorageCore
+     * @private
+     */
+    _readStorageItem (storage, key, storageType) {
+        const _that = this;
+        let res = null;
+        if (storage && key) {
+            res = storage.getItem(key);
+            if (storageType === 'l' || storageType === 's') {
+                try {
+                    res = JSON.parse(res);
+                } catch (err) {
+                    _that.removeStorageItem(storage, key);
+                    res = null;
+                }
+            }
+        }
+        return res;
+    }
+
+    /**
+     * 获取storage的值
+     * @param {MemoryStorage|Storage} storage storage对象
+     * @param {String} key key值
      * @param {any} value 值
      * @param {String} storageType storage类型
+     * @param {Object} opts 可选配置参数
      */
-    setStorageItem (storage, key, value, storageType) {
+    setStorageItem (storage, key, value, storageType, opts) {
         if (!storage || !key) {
             return;
         }
         const _that = this;
-        const _opts = _that.defaultOptions;
+        const _opts = _that.getOpts(opts);
         let obj = {
             size: 0
         };
@@ -111,7 +139,7 @@ export default class StorageCore extends DefaultOptions {
                 }
             }
             if (_opts.getBLen instanceof Function) {
-                obj['size'] = _opts.getBLen(value);
+                obj['size'] = _opts.getBLen(JSON.stringify(value));
             }
         }
         _that.updateStorageItem(storage, key, obj, storageType);
@@ -129,9 +157,98 @@ export default class StorageCore extends DefaultOptions {
      * @exports
      */
     getStorageItem (storage, key, isDel, storageType) {
+        const _that = this;
         let res = null;
+
         if (storage && key) {
-            
+            res = _that._readStorageItem(storage, key, storageType);
+            if (res) {
+                if (isDel) {
+                    _that.removeStorageItem(storage, key);
+                    res = null;
+                } else {
+                    const _timeout = res.timeout;
+                    const _ctime = res.ctime;
+                    const _nowTime = (new Date()).getTime();
+                    if (typeof _timeout !== 'undefined' && typeof _ctime !== 'undefined' &&
+                        _nowTime - _ctime > _timeout) {
+                        _that.removeStorageItem(storage, key);
+                        res = null;
+                    } else {
+                        res.atime = _nowTime;
+                        _that.updateStorageItem(storage, key, res, storageType);
+                    }
+                }
+            }
         }
+        return res;
+    }
+
+    /**
+     * 清除storage指定项
+     * @param {MemoryStorage|Storage} storage storage对象
+     * @param {String} key key值
+     * 
+     * @protected
+     * @exports
+     */
+    removeStorageItem (storage, key) {
+        if (storage && key) {
+            storage.removeItem(key);
+        }
+    }
+
+    /**
+     * 清除整个storage
+     * @param {MemoryStorage|Storage} storage 对象
+     * 
+     * @protected
+     * @exports
+     */
+    clear (storage) {
+        if (storage) {
+            storage.clear();
+        }
+    }
+
+    /**
+     * 获取session的storage
+     * @returns {Storage} 返回获取到storage对象
+     */
+    getSessionStorage () {
+        const _that = this;
+        let session = _that._getStorage('_session_', 's');
+
+        _that.getSessionStorage = function () {
+            return session;
+        }
+
+        return session;
+    }
+
+    /**
+     * 获取local的storage
+     * @returns {Storage} 返回获取到storage对象
+     */
+    getLocalStorage () {
+        const _that = this;
+        let local = _that._getStorage('_local_', 'l');
+
+        _that.getLocalStorage = function () {
+            return local;
+        }
+
+        return local;
+    }
+
+    /**
+     * 获取暂存的storage
+     * @param {Object} opts 配置对象
+     * @returns {Storage} 返回获取到storage对象
+     */
+    getMemoryStorage (opts) {
+        const _that = this;
+        const _storageKey = opts.storageKey;
+        return _that._getStorage('_data_' + _storageKey || '', 'd');
     }
 }
